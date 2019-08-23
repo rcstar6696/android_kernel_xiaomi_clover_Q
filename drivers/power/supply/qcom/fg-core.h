@@ -408,6 +408,7 @@ struct fg_chip {
 	struct fg_sram_param	*sp;
 	struct fg_alg_flag	*alg_flags;
 	int			*debug_mask;
+	char			*debug_dump;
 	char			batt_profile[PROFILE_LEN];
 	struct fg_dt_props	dt;
 	struct fg_batt_props	bp;

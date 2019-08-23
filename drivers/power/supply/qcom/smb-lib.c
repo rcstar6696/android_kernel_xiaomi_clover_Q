@@ -1901,33 +1901,6 @@ int smblib_get_prop_input_current_limited(struct smb_charger *chg,
 	return 0;
 }
 
-#ifdef CONFIG_XIAOMI_CLOVER
-int smblib_get_prop_batt_voltage_now(struct smb_charger *chg,
-				     union power_supply_propval *val)
-{
-	int rc;
-
-	if (!chg->bms_psy)
-		return -EINVAL;
-
-	rc = power_supply_get_property(chg->bms_psy,
-				       POWER_SUPPLY_PROP_VOLTAGE_NOW, val);
-	return rc;
-}
-
-int smblib_get_prop_batt_current_now(struct smb_charger *chg,
-				     union power_supply_propval *val)
-{
-	int rc;
-
-	if (!chg->bms_psy)
-		return -EINVAL;
-
-	rc = power_supply_get_property(chg->bms_psy,
-				       POWER_SUPPLY_PROP_CURRENT_NOW, val);
-	return rc;
-}
-
 int smblib_get_prop_batt_resistance_id(struct smb_charger *chg,
 				     union power_supply_propval *val)
 {
@@ -1966,7 +1939,6 @@ int smblib_get_prop_batt_temp(struct smb_charger *chg,
 				       POWER_SUPPLY_PROP_TEMP, val);
 	return rc;
 }
-#endif
 
 int smblib_get_prop_batt_charge_done(struct smb_charger *chg,
 					union power_supply_propval *val)
@@ -2473,6 +2445,7 @@ int smblib_get_prop_charger_temp_max(struct smb_charger *chg,
 	val->intval /= 100;
 	return rc;
 }
+
 
 int smblib_get_prop_typec_cc_orientation(struct smb_charger *chg,
 					 union power_supply_propval *val)
@@ -3517,7 +3490,7 @@ int get_prop_batt_volt(struct smb_charger *chg)
 	union power_supply_propval volt_val = {0, };
 	int rc;
 
-	rc = smblib_get_prop_batt_voltage_now(chg, &volt_val);
+	rc = smblib_get_prop_from_bms(chg, POWER_SUPPLY_PROP_VOLTAGE_NOW, &volt_val);
 
 	return volt_val.intval;
 }
@@ -3670,6 +3643,7 @@ void smblib_usb_plugin_hard_reset_locked(struct smb_charger *chg)
 		return;
 	}
 
+
 	vbus_rising = (bool)(stat & USBIN_PLUGIN_RT_STS_BIT);
 
 	if (vbus_rising) {
@@ -3735,7 +3709,6 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 	vbus_rising = (bool)(stat & USBIN_PLUGIN_RT_STS_BIT);
 	smblib_set_opt_freq_buck(chg, vbus_rising ? chg->chg_freq.freq_5V :
 						chg->chg_freq.freq_removal);
-
 	if (vbus_rising) {
 		rc = smblib_request_dpdm(chg, true);
 		if (rc < 0)
@@ -4557,7 +4530,6 @@ unlock:
 static void smblib_handle_typec_insertion(struct smb_charger *chg)
 {
 	int rc;
-
 	vote(chg->pd_disallowed_votable_indirect, CC_DETACHED_VOTER, false, 0);
 
 	/* disable APSD CC trigger since CC is attached */

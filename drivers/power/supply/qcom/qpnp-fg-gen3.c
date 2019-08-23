@@ -651,6 +651,10 @@ static int fg_get_battery_temp(struct fg_chip *chip, int *val)
 		return rc;
 	}
 
+	#if defined(CONFIG_HQ_ZQL5018_NTCLOSS)
+	temp = 270;
+	*val = temp;
+	#else
 	temp = ((buf[1] & BATT_TEMP_MSB_MASK) << 8) |
 		(buf[0] & BATT_TEMP_LSB_MASK);
 	temp = DIV_ROUND_CLOSEST(temp, 4);
@@ -658,6 +662,7 @@ static int fg_get_battery_temp(struct fg_chip *chip, int *val)
 	/* Value is in Kelvin; Convert it to deciDegC */
 	temp = (temp - 273) * 10;
 	*val = temp;
+	#endif
 	return 0;
 }
 
@@ -1039,6 +1044,10 @@ static int fg_get_batt_profile(struct fg_chip *chip)
 		pr_err("battery float voltage unavailable, rc:%d\n", rc);
 		chip->bp.float_volt_uv = -EINVAL;
 	}
+
+	#if defined(CONFIG_HQ_ZQL5018_NTCLOSS)
+		chip->bp.float_volt_uv = 4100000;
+	#endif
 
 	rc = of_property_read_u32(profile_node, "qcom,fastchg-current-ma",
 			&chip->bp.fastchg_curr_ma);
@@ -3849,6 +3858,9 @@ static int fg_psy_get_property(struct power_supply *psy,
 #else
 		pval->intval = chip->cl.nom_cap_uah;
 #endif
+
+	case POWER_SUPPLY_PROP_DUMP_SRAM:
+		pval->strval = chip->debug_dump;
 		break;
 	case POWER_SUPPLY_PROP_RESISTANCE_ID:
 		pval->intval = chip->batt_id_ohms;
@@ -3921,6 +3933,8 @@ static int fg_psy_get_property(struct power_supply *psy,
 	return 0;
 }
 
+static void dump_debug(struct fg_chip *chip);
+
 static int fg_psy_set_property(struct power_supply *psy,
 				  enum power_supply_property psp,
 				  const union power_supply_propval *pval)
@@ -3943,6 +3957,10 @@ static int fg_psy_set_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_RESISTANCE:
 		rc = fg_force_esr_meas(chip);
+		break;
+
+	case POWER_SUPPLY_PROP_DUMP_SRAM:
+		dump_debug(chip);
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_QNOVO_ENABLE:
 		rc = fg_prepare_for_qnovo(chip, pval->intval);
@@ -4022,6 +4040,7 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_CYCLE_COUNT_ID:
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE:
+	case POWER_SUPPLY_PROP_DUMP_SRAM:
 	case POWER_SUPPLY_PROP_CC_STEP:
 	case POWER_SUPPLY_PROP_CC_STEP_SEL:
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
@@ -4036,6 +4055,50 @@ static int fg_property_is_writeable(struct power_supply *psy,
 
 	return 0;
 }
+
+
+#define SRAM_DUMP_LEN		0x200
+#define SRAM_DUMP_START		0x400
+#define DEBUG_PRINT_BUFFER_SIZE 64
+#define INT_RT_STS(base)			(base + 0x10)
+static void dump_debug(struct fg_chip *chip)
+{
+	int  rc, pos = 0;
+	u8 *buffer, rt_sts;
+	buffer = devm_kzalloc(chip->dev, SRAM_DUMP_LEN, GFP_KERNEL);
+	memset(buffer, 0, SRAM_DUMP_LEN);
+
+	if (buffer == NULL) {
+		pr_err("Can't allocate buffer\n");
+		return;
+	}
+
+	rc = fg_read(chip, BATT_SOC_INT_RT_STS(chip), &rt_sts,  1);
+	if (rc)
+		pr_err("spmi read failed: addr=%03X, rc=%d\n",
+				BATT_SOC_INT_RT_STS(chip), rc);
+	else
+		pos += sprintf(chip->debug_dump + pos, "soc-rt-sts: 0x%0x    ", rt_sts);
+
+	pos -= 1;
+	rc = fg_read(chip, BATT_INFO_INT_RT_STS(chip), &rt_sts, 1);
+	if (rc)
+		pr_err("spmi read failed: addr=%03X, rc=%d\n",
+				BATT_INFO_INT_RT_STS(chip), rc);
+	else
+		pos += sprintf(chip->debug_dump + pos, "batt-rt-sts: 0x%0x    ", rt_sts);
+
+	pos -= 1;
+	rc = fg_read(chip, MEM_IF_INT_RT_STS(chip), &rt_sts, 1);
+	if (rc)
+		pr_err("spmi read failed: addr=%03X, rc=%d\n",
+				MEM_IF_INT_RT_STS(chip), rc);
+	else
+		pos += sprintf(chip->debug_dump + pos, "memif rt-sts: 0x%0x    ", rt_sts);
+
+	devm_kfree(chip->dev, buffer);
+}
+
 
 static void fg_external_power_changed(struct power_supply *psy)
 {
@@ -4090,6 +4153,7 @@ static enum power_supply_property fg_psy_props[] = {
 	POWER_SUPPLY_PROP_RESISTANCE_ID,
 	POWER_SUPPLY_PROP_RESISTANCE,
 	POWER_SUPPLY_PROP_BATTERY_TYPE,
+	POWER_SUPPLY_PROP_DUMP_SRAM,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
@@ -5105,11 +5169,17 @@ static int fg_parse_dt(struct fg_chip *chip)
 		chip->dt.rsense_sel = SRC_SEL_BATFET_SMB;
 	else
 		chip->dt.rsense_sel = (u8)temp & SOURCE_SELECT_MASK;
-
+#if defined(CONFIG_HQ_ZQL5018_NTCLOSS)
+	chip->dt.jeita_thresholds[JEITA_COLD] = -400;
+	chip->dt.jeita_thresholds[JEITA_COOL] = -300;
+	chip->dt.jeita_thresholds[JEITA_WARM] = 900;
+	chip->dt.jeita_thresholds[JEITA_HOT] = 1000;
+#else
 	chip->dt.jeita_thresholds[JEITA_COLD] = DEFAULT_BATT_TEMP_COLD;
 	chip->dt.jeita_thresholds[JEITA_COOL] = DEFAULT_BATT_TEMP_COOL;
 	chip->dt.jeita_thresholds[JEITA_WARM] = DEFAULT_BATT_TEMP_WARM;
 	chip->dt.jeita_thresholds[JEITA_HOT] = DEFAULT_BATT_TEMP_HOT;
+#endif
 	if (of_property_count_elems_of_size(node, "qcom,fg-jeita-thresholds",
 		sizeof(u32)) == NUM_JEITA_LEVELS) {
 		rc = of_property_read_u32_array(node,
@@ -5351,6 +5421,10 @@ static int fg_gen3_probe(struct platform_device *pdev)
 	chip->ki_coeff_full_soc = -EINVAL;
 	chip->online_status = -EINVAL;
 	chip->regmap = dev_get_regmap(chip->dev->parent, NULL);
+
+	chip->debug_dump = kmalloc(sizeof(char)*2048, GFP_KERNEL);
+	memset(chip->debug_dump, '\0', sizeof(char)*2048);
+
 	if (!chip->regmap) {
 		dev_err(chip->dev, "Parent regmap is unavailable\n");
 		return -ENXIO;

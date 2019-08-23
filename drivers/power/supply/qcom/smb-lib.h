@@ -249,6 +249,7 @@ struct smb_charger {
 	int			otg_delay_ms;
 	int			*weak_chg_icl_ua;
 
+	char			*debug_dump;
 	/* locks */
 	struct mutex		lock;
 	struct mutex		write_lock;
@@ -441,18 +442,12 @@ int smblib_get_prop_system_temp_level(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_input_current_limited(struct smb_charger *chg,
 				union power_supply_propval *val);
-#ifdef CONFIG_XIAOMI_CLOVER
-int smblib_get_prop_batt_voltage_now(struct smb_charger *chg,
-				union power_supply_propval *val);
-int smblib_get_prop_batt_current_now(struct smb_charger *chg,
-				union power_supply_propval *val);
 int smblib_get_prop_batt_charge_full_design(struct smb_charger *chg,
 				     union power_supply_propval *val);
 int smblib_get_prop_batt_temp(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_batt_charge_counter(struct smb_charger *chg,
 				union power_supply_propval *val);
-#endif
 int smblib_set_prop_input_suspend(struct smb_charger *chg,
 				const union power_supply_propval *val);
 int smblib_set_prop_batt_capacity(struct smb_charger *chg,
@@ -551,6 +546,8 @@ int smblib_get_prop_batt_resistance_id(struct smb_charger *chg,
 				     union power_supply_propval *val);
 #endif
 
+int smblib_get_prop_batt_resistance_id(struct smb_charger *chg,
+				     union power_supply_propval *val);
 int smblib_init(struct smb_charger *chg);
 int smblib_deinit(struct smb_charger *chg);
 #ifdef CONFIG_XIAOMI_CLOVER
