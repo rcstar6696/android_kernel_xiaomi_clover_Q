@@ -68,6 +68,7 @@ obj-$(CONFIG_QPNP_MISC) 	+= qpnp-misc.o
 obj-$(CONFIG_FORCE_FAST_CHARGE) += fastchg.o
 obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
 obj-$(CONFIG_HQ_HARDWARE_INFO) += hqhardwareinfo/
+obj-$(CONFIG_MI_FS)             +=xiaomi_fs/
 
 # TODO: remove me b/62058353
 subdir-ccflags-y += \
